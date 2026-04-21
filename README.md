@@ -27,4 +27,6 @@ pipenv shell
 pip install -r requirements.txt
 
 # Jalankan aplikasi streamlit
+cd dashboard
+
 streamlit run dashboard.py
