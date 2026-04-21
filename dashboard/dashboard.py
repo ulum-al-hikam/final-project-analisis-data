@@ -28,7 +28,7 @@ st.set_page_config(
 # 2. Fungsi Load Data
 @st.cache_data
 def load_data():
-    url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/dashboard/olist_final_dataset.csv"
+    url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/main/dashboard/olist_final_dataset.csv"
 
     # Cek apakah URL bisa diakses
     try:
