@@ -15,6 +15,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
+import requests
+from io import StringIO
 
 # 1. Konfigurasi Halaman
 st.set_page_config(
@@ -23,15 +25,54 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. Fungsi Load Data (Menggunakan link Raw GitHub)
+# 2. Fungsi Load Data
 @st.cache_data
 def load_data():
-    url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/main/dashboard/olist_final_dataset.csv"
-    df = pd.read_csv(url, on_bad_lines='skip')
-    df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+    url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/dashboard/olist_final_dataset.csv"
+
+    # Cek apakah URL bisa diakses
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        st.error(f"❌ File CSV tidak ditemukan di GitHub. Pastikan file sudah di-upload ke repo.\nDetail: {e}")
+        st.stop()
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Tidak bisa terhubung ke GitHub. Periksa koneksi internet.")
+        st.stop()
+    except requests.exceptions.Timeout:
+        st.error("❌ Koneksi timeout saat mengambil file CSV.")
+        st.stop()
+
+    # Cek apakah konten kosong
+    if len(response.content) == 0:
+        st.error("❌ File CSV ditemukan tapi kosong (0 bytes). Silakan upload ulang file ke GitHub.")
+        st.stop()
+
+    # Baca CSV
+    try:
+        df = pd.read_csv(StringIO(response.text), on_bad_lines='skip')
+    except Exception as e:
+        st.error(f"❌ Gagal membaca file CSV: {e}")
+        st.stop()
+
+    # Validasi kolom penting
+    required_columns = ['order_purchase_timestamp', 'price', 'order_id', 'review_score']
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    if missing_cols:
+        st.error(f"❌ Kolom berikut tidak ditemukan di CSV: {missing_cols}\n\nKolom yang tersedia: {list(df.columns)}")
+        st.stop()
+
+    # Konversi kolom tanggal
+    df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'], errors='coerce')
+    df = df.dropna(subset=['order_purchase_timestamp'])
+
     return df
 
-all_df = load_data()
+
+# ── LOAD DATA ──────────────────────────────────────────────────────────────────
+with st.spinner("Memuat data..."):
+    all_df = load_data()
 
 # 3. Header Dashboard
 st.title("📊 Brazilian E-Commerce Dashboard")
@@ -61,6 +102,10 @@ main_df = all_df[
     (all_df["order_purchase_timestamp"] <= pd.to_datetime(end_date))
 ]
 
+if main_df.empty:
+    st.warning("⚠️ Tidak ada data pada rentang waktu yang dipilih. Silakan ubah filter.")
+    st.stop()
+
 # 5. Ringkasan Performa (Metrics)
 col_m1, col_m2, col_m3 = st.columns(3)
 with col_m1:
@@ -75,80 +120,75 @@ st.divider()
 
 # --- PERTANYAAN 1: PRODUK TERLARIS ---
 st.subheader("🛍️ Performa Kategori Produk Teratas")
-col1, col2 = st.columns(2)
 
-with col1:
-    top_revenue = (
-        main_df.groupby("product_category_name_english")["price"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(5)
-        .reset_index()
-    )
-    top_revenue.columns = ["category", "revenue"]
+if 'product_category_name_english' not in main_df.columns:
+    st.warning("⚠️ Kolom 'product_category_name_english' tidak ditemukan di dataset.")
+else:
+    col1, col2 = st.columns(2)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(
-        data=top_revenue,
-        x="revenue",
-        y="category",
-        palette="viridis",
-        ax=ax
-    )
-    ax.set_title("5 Kategori dengan Pendapatan Tertinggi (Revenue)", fontsize=15)
-    ax.set_xlabel("Total Revenue (BRL)")
-    ax.set_ylabel(None)
-    st.pyplot(fig)
-    plt.close(fig)
+    with col1:
+        top_revenue = (
+            main_df.groupby("product_category_name_english")["price"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(5)
+            .reset_index()
+        )
+        top_revenue.columns = ["category", "revenue"]
 
-with col2:
-    top_volume = (
-        main_df.groupby("product_category_name_english")["order_id"]
-        .nunique()
-        .sort_values(ascending=False)
-        .head(5)
-        .reset_index()
-    )
-    top_volume.columns = ["category", "orders"]
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(data=top_revenue, x="revenue", y="category", palette="viridis", ax=ax)
+        ax.set_title("5 Kategori dengan Pendapatan Tertinggi (Revenue)", fontsize=15)
+        ax.set_xlabel("Total Revenue (BRL)")
+        ax.set_ylabel(None)
+        st.pyplot(fig)
+        plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(
-        data=top_volume,
-        x="orders",
-        y="category",
-        palette="magma",
-        ax=ax
-    )
-    ax.set_title("5 Kategori dengan Penjualan Terbanyak (Volume)", fontsize=15)
-    ax.set_xlabel("Jumlah Pesanan")
-    ax.set_ylabel(None)
-    st.pyplot(fig)
-    plt.close(fig)
+    with col2:
+        top_volume = (
+            main_df.groupby("product_category_name_english")["order_id"]
+            .nunique()
+            .sort_values(ascending=False)
+            .head(5)
+            .reset_index()
+        )
+        top_volume.columns = ["category", "orders"]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(data=top_volume, x="orders", y="category", palette="magma", ax=ax)
+        ax.set_title("5 Kategori dengan Penjualan Terbanyak (Volume)", fontsize=15)
+        ax.set_xlabel("Jumlah Pesanan")
+        ax.set_ylabel(None)
+        st.pyplot(fig)
+        plt.close(fig)
 
 # --- PERTANYAAN 2: KEPUASAN & LOGISTIK ---
 st.subheader("🚚 Analisis Logistik dan Kepuasan Pelanggan")
 
-sample_df = main_df.dropna(subset=['delivery_time', 'review_score'])
-if len(sample_df) > 1000:
-    sample_df = sample_df.sample(1000, random_state=42)
-
-if len(sample_df) > 0:
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.regplot(
-        x="delivery_time",
-        y="review_score",
-        data=sample_df,
-        scatter_kws={'alpha': 0.3, 'color': 'skyblue'},
-        line_kws={'color': 'red'},
-        ax=ax
-    )
-    ax.set_title("Korelasi Lama Waktu Pengiriman vs Skor Review", fontsize=16)
-    ax.set_xlabel("Waktu Pengiriman (Hari)", fontsize=12)
-    ax.set_ylabel("Skor Review (1-5)", fontsize=12)
-    st.pyplot(fig)
-    plt.close(fig)
+if 'delivery_time' not in main_df.columns:
+    st.warning("⚠️ Kolom 'delivery_time' tidak ditemukan di dataset.")
 else:
-    st.warning("Tidak ada data yang cukup untuk menampilkan grafik ini pada rentang waktu yang dipilih.")
+    sample_df = main_df.dropna(subset=['delivery_time', 'review_score'])
+    if len(sample_df) > 1000:
+        sample_df = sample_df.sample(1000, random_state=42)
+
+    if len(sample_df) > 1:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.regplot(
+            x="delivery_time",
+            y="review_score",
+            data=sample_df,
+            scatter_kws={'alpha': 0.3, 'color': 'skyblue'},
+            line_kws={'color': 'red'},
+            ax=ax
+        )
+        ax.set_title("Korelasi Lama Waktu Pengiriman vs Skor Review", fontsize=16)
+        ax.set_xlabel("Waktu Pengiriman (Hari)", fontsize=12)
+        ax.set_ylabel("Skor Review (1-5)", fontsize=12)
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.warning("⚠️ Data tidak cukup untuk menampilkan grafik korelasi.")
 
 # Footer
 st.divider()
