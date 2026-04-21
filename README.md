@@ -17,9 +17,13 @@
 └── requirements.txt 
 
 ## Setup Environment - Shell/Terminal
+
 cd Proyek_Akhir_Fundamental_Analisis_Data
+
 pipenv install
+
 pipenv shell
+
 pip install -r requirements.txt
 
 # Jalankan aplikasi streamlit
