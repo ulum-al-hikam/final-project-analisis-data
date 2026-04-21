@@ -12,65 +12,127 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 
-# Set Page Config
-st.set_page_config(page_title="Olist E-Commerce Dashboard", layout="wide")
+# 1. Konfigurasi Halaman
+st.set_page_config(
+    page_title="Brazilian E-Commerce Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
 
-# Load Data
+# 2. Fungsi Load Data (Menggunakan link Raw GitHub)
 @st.cache_data
 def load_data():
-    df = pd.read_csv("https://github.com/ulum-al-hikam/final-project-analisis-data/blob/bb2134b3ce1d017474539ec3a59c877d5a65ccd1/dashboard/olist_final_dataset.csv")
+    # GANTI 'ulum-al-hikam' dengan username GitHub kamu jika berbeda
+    url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/main/dashboard/olist_final_dataset.csv"
+    
+    # Membaca data dengan penanganan baris yang rusak (ParserError)
+    df = pd.read_csv(url, on_bad_lines='skip')
+    
+    # Konversi kolom tanggal
     df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+    
     return df
 
 all_df = load_data()
 
-# Header
+# 3. Header Dashboard
 st.title("📊 Brazilian E-Commerce Dashboard")
-st.markdown("Dashboard ini menganalisis performa penjualan dan kepuasan pelanggan pada periode 2017-2018.")
+st.markdown("""
+Dashboard ini menyajikan analisis mendalam mengenai performa kategori produk dan tingkat kepuasan pelanggan 
+pada periode **2017 hingga 2018**.
+""")
 
-# Sidebar (Filter Waktu)
-min_date = all_df["order_purchase_timestamp"].min()
-max_date = all_df["order_purchase_timestamp"].max()
-
+# 4. Sidebar - Filter Rentang Waktu
 with st.sidebar:
     st.image("https://github.com/dicodingacademy/assets/raw/main/logo.png")
+    st.header("Filter Analisis")
+    
+    min_date = all_df["order_purchase_timestamp"].min()
+    max_date = all_df["order_purchase_timestamp"].max()
+
+    # Widget Date Input
     start_date, end_date = st.date_input(
-        label='Rentang Waktu',
+        label='Pilih Rentang Waktu',
         min_value=min_date,
         max_value=max_date,
         value=[min_date, max_date]
     )
 
-# Filter data berdasarkan sidebar
-main_df = all_df[(all_df["order_purchase_timestamp"] >= str(start_date)) &
-                (all_df["order_purchase_timestamp"] <= str(end_date))]
+# Filter dataframe berdasarkan input sidebar
+# Kita konversi start_date & end_date ke datetime agar kompatibel
+main_df = all_df[(all_df["order_purchase_timestamp"] >= pd.to_datetime(start_date)) & 
+                 (all_df["order_purchase_timestamp"] <= pd.to_datetime(end_date))]
+
+# 5. Ringkasan Performa (Metrics)
+col_m1, col_m2, col_m3 = st.columns(3)
+with col_m1:
+    st.metric("Total Revenue", value=f"R$ {main_df.price.sum():,.2f}")
+with col_m2:
+    st.metric("Total Orders", value=main_df.order_id.nunique())
+with col_m3:
+    st.metric("Avg. Review Score", value=round(main_df.review_score.mean(), 2))
+
+st.divider()
 
 # --- PERTANYAAN 1: PRODUK TERLARIS ---
-st.subheader("Produk dengan Performa Terbaik")
+st.subheader("🛍️ Performa Kategori Produk Teratas")
 col1, col2 = st.columns(2)
 
 with col1:
     # Revenue tertinggi
     top_revenue = main_df.groupby("product_category_name_english").price.sum().sort_values(ascending=False).head(5)
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(x=top_revenue.values, y=top_revenue.index, palette="viridis", ax=ax)
-    ax.set_title("Top 5 Kategori Berdasarkan Revenue")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(
+        x=top_revenue.values, 
+        y=top_revenue.index, 
+        hue=top_revenue.index, 
+        palette="viridis", 
+        legend=False, 
+        ax=ax
+    )
+    ax.set_title("5 Kategori dengan Pendapatan Tertinggi (Revenue)", fontsize=15)
+    ax.set_xlabel("Total Revenue (BRL)")
+    ax.set_ylabel(None)
     st.pyplot(fig)
 
 with col2:
     # Volume tertinggi
     top_volume = main_df.groupby("product_category_name_english").order_id.nunique().sort_values(ascending=False).head(5)
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(x=top_volume.values, y=top_volume.index, palette="magma", ax=ax)
-    ax.set_title("Top 5 Kategori Berdasarkan Volume Pesanan")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(
+        x=top_volume.values, 
+        y=top_volume.index, 
+        hue=top_volume.index, 
+        palette="magma", 
+        legend=False, 
+        ax=ax
+    )
+    ax.set_title("5 Kategori dengan Penjualan Terbanyak (Volume)", fontsize=15)
+    ax.set_xlabel("Jumlah Pesanan")
+    ax.set_ylabel(None)
     st.pyplot(fig)
 
 # --- PERTANYAAN 2: KEPUASAN & LOGISTIK ---
-st.subheader("Kepuasan Pelanggan & Efisiensi Pengiriman")
-# Hitung korelasi sederhana di dashboard
+st.subheader("🚚 Analisis Logistik dan Kepuasan Pelanggan")
+
+# Kita ambil sampel data agar dashboard tetap ringan saat loading
+sample_df = main_df.dropna(subset=['delivery_time', 'review_score'])
+if len(sample_df) > 1000:
+    sample_df = sample_df.sample(1000, random_state=42)
+
 fig, ax = plt.subplots(figsize=(12, 6))
-sns.regplot(x="delivery_time", y="review_score", data=main_df.sample(min(1000, len(main_df))), scatter_kws={'alpha':0.3})
-ax.set_title("Korelasi Lama Pengiriman vs Skor Review")
+sns.regplot(
+    x="delivery_time", 
+    y="review_score", 
+    data=sample_df, 
+    scatter_kws={'alpha':0.3, 'color': 'skyblue'}, 
+    line_kws={'color':'red'}
+)
+ax.set_title("Korelasi Lama Waktu Pengiriman vs Skor Review", fontsize=16)
+ax.set_xlabel("Waktu Pengiriman (Hari)", fontsize=12)
+ax.set_ylabel("Skor Review (1-5)", fontsize=12)
 st.pyplot(fig)
 
-st.caption("Copyright (c) Ulum Hikam 2026")
+# Footer
+st.divider()
+st.caption("Copyright © Ulum Hikam - Data Engineer & ML Enthusiast 2026")
