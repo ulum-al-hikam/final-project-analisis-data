@@ -7,6 +7,10 @@ Original file is located at
     https://colab.research.google.com/drive/1dP1ja8FKDNp3lwHL-oS15p-exbMIRz3D
 """
 
+"""
+Brazilian E-Commerce Dashboard
+"""
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,15 +26,9 @@ st.set_page_config(
 # 2. Fungsi Load Data (Menggunakan link Raw GitHub)
 @st.cache_data
 def load_data():
-    # GANTI 'ulum-al-hikam' dengan username GitHub kamu jika berbeda
     url = "https://raw.githubusercontent.com/ulum-al-hikam/final-project-analisis-data/main/dashboard/olist_final_dataset.csv"
-    
-    # Membaca data dengan penanganan baris yang rusak (ParserError)
     df = pd.read_csv(url, on_bad_lines='skip')
-    
-    # Konversi kolom tanggal
     df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
-    
     return df
 
 all_df = load_data()
@@ -46,11 +44,10 @@ pada periode **2017 hingga 2018**.
 with st.sidebar:
     st.image("https://github.com/dicodingacademy/assets/raw/main/logo.png")
     st.header("Filter Analisis")
-    
+
     min_date = all_df["order_purchase_timestamp"].min()
     max_date = all_df["order_purchase_timestamp"].max()
 
-    # Widget Date Input
     start_date, end_date = st.date_input(
         label='Pilih Rentang Waktu',
         min_value=min_date,
@@ -58,19 +55,21 @@ with st.sidebar:
         value=[min_date, max_date]
     )
 
-# Filter dataframe berdasarkan input sidebar
-# Kita konversi start_date & end_date ke datetime agar kompatibel
-main_df = all_df[(all_df["order_purchase_timestamp"] >= pd.to_datetime(start_date)) & 
-                 (all_df["order_purchase_timestamp"] <= pd.to_datetime(end_date))]
+# Filter dataframe
+main_df = all_df[
+    (all_df["order_purchase_timestamp"] >= pd.to_datetime(start_date)) &
+    (all_df["order_purchase_timestamp"] <= pd.to_datetime(end_date))
+]
 
 # 5. Ringkasan Performa (Metrics)
 col_m1, col_m2, col_m3 = st.columns(3)
 with col_m1:
-    st.metric("Total Revenue", value=f"R$ {main_df.price.sum():,.2f}")
+    st.metric("Total Revenue", value=f"R$ {main_df['price'].sum():,.2f}")
 with col_m2:
-    st.metric("Total Orders", value=main_df.order_id.nunique())
+    st.metric("Total Orders", value=main_df['order_id'].nunique())
 with col_m3:
-    st.metric("Avg. Review Score", value=round(main_df.review_score.mean(), 2))
+    avg_score = main_df['review_score'].mean()
+    st.metric("Avg. Review Score", value=round(avg_score, 2) if pd.notna(avg_score) else "N/A")
 
 st.divider()
 
@@ -79,59 +78,77 @@ st.subheader("🛍️ Performa Kategori Produk Teratas")
 col1, col2 = st.columns(2)
 
 with col1:
-    # Revenue tertinggi
-    top_revenue = main_df.groupby("product_category_name_english").price.sum().sort_values(ascending=False).head(5)
+    top_revenue = (
+        main_df.groupby("product_category_name_english")["price"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(5)
+        .reset_index()
+    )
+    top_revenue.columns = ["category", "revenue"]
+
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(
-        x=top_revenue.values, 
-        y=top_revenue.index, 
-        hue=top_revenue.index, 
-        palette="viridis", 
-        legend=False, 
+        data=top_revenue,
+        x="revenue",
+        y="category",
+        palette="viridis",
         ax=ax
     )
     ax.set_title("5 Kategori dengan Pendapatan Tertinggi (Revenue)", fontsize=15)
     ax.set_xlabel("Total Revenue (BRL)")
     ax.set_ylabel(None)
     st.pyplot(fig)
+    plt.close(fig)
 
 with col2:
-    # Volume tertinggi
-    top_volume = main_df.groupby("product_category_name_english").order_id.nunique().sort_values(ascending=False).head(5)
+    top_volume = (
+        main_df.groupby("product_category_name_english")["order_id"]
+        .nunique()
+        .sort_values(ascending=False)
+        .head(5)
+        .reset_index()
+    )
+    top_volume.columns = ["category", "orders"]
+
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(
-        x=top_volume.values, 
-        y=top_volume.index, 
-        hue=top_volume.index, 
-        palette="magma", 
-        legend=False, 
+        data=top_volume,
+        x="orders",
+        y="category",
+        palette="magma",
         ax=ax
     )
     ax.set_title("5 Kategori dengan Penjualan Terbanyak (Volume)", fontsize=15)
     ax.set_xlabel("Jumlah Pesanan")
     ax.set_ylabel(None)
     st.pyplot(fig)
+    plt.close(fig)
 
 # --- PERTANYAAN 2: KEPUASAN & LOGISTIK ---
 st.subheader("🚚 Analisis Logistik dan Kepuasan Pelanggan")
 
-# Kita ambil sampel data agar dashboard tetap ringan saat loading
 sample_df = main_df.dropna(subset=['delivery_time', 'review_score'])
 if len(sample_df) > 1000:
     sample_df = sample_df.sample(1000, random_state=42)
 
-fig, ax = plt.subplots(figsize=(12, 6))
-sns.regplot(
-    x="delivery_time", 
-    y="review_score", 
-    data=sample_df, 
-    scatter_kws={'alpha':0.3, 'color': 'skyblue'}, 
-    line_kws={'color':'red'}
-)
-ax.set_title("Korelasi Lama Waktu Pengiriman vs Skor Review", fontsize=16)
-ax.set_xlabel("Waktu Pengiriman (Hari)", fontsize=12)
-ax.set_ylabel("Skor Review (1-5)", fontsize=12)
-st.pyplot(fig)
+if len(sample_df) > 0:
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.regplot(
+        x="delivery_time",
+        y="review_score",
+        data=sample_df,
+        scatter_kws={'alpha': 0.3, 'color': 'skyblue'},
+        line_kws={'color': 'red'},
+        ax=ax
+    )
+    ax.set_title("Korelasi Lama Waktu Pengiriman vs Skor Review", fontsize=16)
+    ax.set_xlabel("Waktu Pengiriman (Hari)", fontsize=12)
+    ax.set_ylabel("Skor Review (1-5)", fontsize=12)
+    st.pyplot(fig)
+    plt.close(fig)
+else:
+    st.warning("Tidak ada data yang cukup untuk menampilkan grafik ini pada rentang waktu yang dipilih.")
 
 # Footer
 st.divider()
